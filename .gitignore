@@ -1,0 +1,14 @@
+node_modules
+.next
+dist
+coverage
+.env
+.env.example
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+.DS_Store
+tmp
+uploads
+apps/api/prisma/migrations/dev.db

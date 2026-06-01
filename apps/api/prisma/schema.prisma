@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGO_URL")
+}
+
+enum FileStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  OCR_COMPLETED
+  EXTRACTED
+  VALIDATED
+  NEEDS_REVIEW
+  FAILED
+  DELETED
+}
+
+enum CertificateStatus {
+  valid
+  expired
+  suspicious
+  incomplete
+  pending_review
+  unknown
+}
+
+enum JobType {
+  OCR_EXTRACTION
+  RETRY
+  EXPORT
+}
+
+enum JobStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum HistoryAction {
+  CREATED
+  OCR_COMPLETED
+  EXTRACTION_COMPLETED
+  VALIDATION_COMPLETED
+  UPDATED
+  COMMENTED
+  RETRIED
+  FAILED
+}
+
+model UploadedFile {
+  id                String                @id @default(auto()) @map("_id") @db.ObjectId
+  originalName      String                @map("original_name")
+  mimeType          String                @map("mime_type")
+  sizeBytes         BigInt                @map("size_bytes")
+  checksum          String?
+  s3Bucket          String                @map("s3_bucket")
+  s3Key             String                @map("s3_key")
+  status            FileStatus            @default(UPLOADED)
+  ocrText           String?               @map("ocr_text")
+  ocrConfidence     Float?                @map("ocr_confidence")
+  pageCount         Int?                  @map("page_count")
+  language          String?
+  pageMetadata      Json?                 @map("page_metadata")
+  tables            Json?
+  formFields        Json?                 @map("form_fields")
+  customExtractions Json?                 @map("custom_extractions")
+  chatMessages      Json?                 @map("chat_messages")
+  processingStartedAt DateTime?           @map("processing_started_at")
+  processingEndedAt   DateTime?           @map("processing_ended_at")
+  failureReason     String?               @map("failure_reason")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  deletedAt         DateTime?             @map("deleted_at")
+
+  extractedCertificate ExtractedCertificate?
+  processingJobs       ProcessingJob[]
+  extractionHistory    ExtractionHistory[]
+  reviewerComments     ReviewerComment[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([checksum])
+  @@map("uploaded_files")
+}
+
+model ExtractedCertificate {
+  id                         String            @id @default(auto()) @map("_id") @db.ObjectId
+  uploadedFileId             String            @unique @map("uploaded_file_id") @db.ObjectId
+  documentType               String?           @map("document_type")
+  certificateStandard        String?           @map("certificate_standard")
+  certificateNumber          String?           @map("certificate_number")
+  organizationName           String?           @map("organization_name")
+  organizationAddress        String?           @map("organization_address")
+  scopeOfCertification       String?           @map("scope_of_certification")
+  certificationBody          String?           @map("certification_body")
+  accreditationBody          String?           @map("accreditation_body")
+  issueDate                  DateTime?         @map("issue_date")
+  expiryDate                 DateTime?         @map("expiry_date")
+  originalCertificationDate  DateTime?         @map("original_certification_date")
+  surveillanceDates          Json              @default("[]") @map("surveillance_dates")
+  iafCodes                   Json              @default("[]") @map("iaf_codes")
+  eaCodes                    Json              @default("[]") @map("ea_codes")
+  authorizedSignatory        String?           @map("authorized_signatory")
+  siteAddresses              Json              @default("[]") @map("site_addresses")
+  registrationNumbers        Json              @default("[]") @map("registration_numbers")
+  qrCodeDetected             Boolean           @default(false) @map("qr_code_detected")
+  sealDetected               Boolean           @default(false) @map("seal_detected")
+  logoDetected               Boolean           @default(false) @map("logo_detected")
+  certificateStatus          CertificateStatus @default(unknown) @map("certificate_status")
+  confidenceScore            Float             @default(0) @map("confidence_score")
+  possibleIssues             Json              @default("[]") @map("possible_issues")
+  validationFlags            Json              @default("[]") @map("validation_flags")
+  normalizedPayload          Json              @map("normalized_payload")
+  rawSummary                 String?           @map("raw_summary")
+  reviewedAt                 DateTime?         @map("reviewed_at")
+  reviewedBy                 String?           @map("reviewed_by")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  updatedAt                  DateTime          @updatedAt @map("updated_at")
+
+  uploadedFile       UploadedFile         @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+  extractionHistory  ExtractionHistory[]
+  reviewerComments   ReviewerComment[]
+
+  @@index([certificateNumber])
+  @@index([organizationName])
+  @@index([certificateStandard])
+  @@index([certificationBody])
+  @@index([expiryDate])
+  @@index([certificateStatus])
+  @@map("extracted_certificates")
+}
+
+model ProcessingJob {
+  id             String     @id @default(auto()) @map("_id") @db.ObjectId
+  uploadedFileId String     @map("uploaded_file_id") @db.ObjectId
+  queueJobId     String?    @unique @map("queue_job_id")
+  jobType        JobType    @map("job_type")
+  status         JobStatus  @default(QUEUED)
+  attempts       Int        @default(0)
+  maxAttempts    Int        @default(3) @map("max_attempts")
+  lastError      String?    @map("last_error")
+  metadata       Json?
+  startedAt      DateTime?  @map("started_at")
+  completedAt    DateTime?  @map("completed_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  uploadedFile UploadedFile @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+
+  @@index([uploadedFileId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("processing_jobs")
+}
+
+model ExtractionHistory {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  uploadedFileId String        @map("uploaded_file_id") @db.ObjectId
+  certificateId  String?       @map("certificate_id") @db.ObjectId
+  action         HistoryAction
+  before         Json?
+  after          Json?
+  actorName      String?       @map("actor_name")
+  note           String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  uploadedFile UploadedFile           @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+  certificate  ExtractedCertificate?  @relation(fields: [certificateId], references: [id], onDelete: SetNull)
+
+  @@index([uploadedFileId])
+  @@index([certificateId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("extraction_history")
+}
+
+model ReviewerComment {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  uploadedFileId String    @map("uploaded_file_id") @db.ObjectId
+  certificateId  String?   @map("certificate_id") @db.ObjectId
+  authorName     String    @default("Reviewer") @map("author_name")
+  comment        String
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  uploadedFile UploadedFile          @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+  certificate  ExtractedCertificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
+
+  @@index([uploadedFileId])
+  @@index([certificateId])
+  @@index([createdAt])
+  @@map("reviewer_comments")
+}
