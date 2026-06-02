@@ -13,6 +13,7 @@ import { requestSanitizer } from "./middleware/request-sanitizer.js";
 import { certificateRoutes } from "./modules/certificates/certificate.routes.js";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes.js";
 import { exportRoutes } from "./modules/exports/export.routes.js";
+import { extractionProfileRoutes } from "./modules/extraction-profiles/extraction-profile.routes.js";
 import { fileRoutes } from "./modules/files/file.routes.js";
 import { ocrRoutes } from "./modules/ocr/ocr.routes.js";
 import { reviewRoutes } from "./modules/review/review.routes.js";
@@ -67,6 +68,7 @@ export const createApp = () => {
   app.use("/api/ocr", ocrRoutes);
   app.use("/api/certificates", certificateRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/extraction-profiles", extractionProfileRoutes);
   app.use("/api/review", reviewRoutes);
   app.use("/api/exports", exportRoutes);
 

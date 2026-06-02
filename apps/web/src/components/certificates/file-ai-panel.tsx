@@ -2,11 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Send, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { chatWithFile, extractPredefinedFields, getDefaultExtractionFields } from "@/lib/api";
 import type {
+  ExtractionProfileField,
   FileChatMessage,
   FileChatResult,
+  PredefinedField,
   PredefinedExtractionResult,
   UploadedFile
 } from "@/types/api";
@@ -16,22 +18,56 @@ const formatValue = (value: string | number | boolean | null) => {
   return String(value);
 };
 
-const defaultFieldsText = (fields: Array<{ label?: string; key: string; description?: string }>) =>
-  fields
-    .map((field) => {
-      const label = field.label ?? field.key;
-      return field.description ? `${label}: ${field.description}` : label;
-    })
-    .join("\n");
+type ConfiguredExtractionField = Pick<ExtractionProfileField, "key" | "label" | "description" | "mandatory" | "aliases">;
+type ExtractedField = PredefinedExtractionResult["fields"][number];
 
-const parseFieldsText = (value: string) =>
-  value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+const toConfiguredField = (field: PredefinedField | ExtractionProfileField): ConfiguredExtractionField => ({
+  key: field.key,
+  label: field.label ?? field.key,
+  ...(field.description ? { description: field.description } : {}),
+  mandatory: "mandatory" in field ? field.mandatory : false,
+  aliases: "aliases" in field ? field.aliases : []
+});
+
+const toExtractionRequestField = (field: ConfiguredExtractionField): PredefinedField => ({
+  key: field.key,
+  label: field.label,
+  ...(field.description ? { description: field.description } : {})
+});
+
+const normalizeMatchText = (value: string | null | undefined) =>
+  (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const hasValue = (value: ExtractedField["value"] | undefined) =>
+  value !== null && value !== undefined && String(value).trim() !== "";
+
+const processingStatuses = new Set(["UPLOADED", "QUEUED", "PROCESSING", "OCR_COMPLETED", "EXTRACTED"]);
+const hasOcrText = (file: UploadedFile | undefined) => Boolean(file?.ocrText?.trim());
+const isProcessingFile = (file: UploadedFile | undefined) => Boolean(file?.status && processingStatuses.has(file.status));
+
+const findExtractedField = (profileField: ConfiguredExtractionField, extractedFields: ExtractedField[]) => {
+  const exact = extractedFields.find((field) => field.key === profileField.key);
+  if (exact && hasValue(exact.value)) return exact;
+
+  const matchKeys = new Set([
+    normalizeMatchText(profileField.key),
+    normalizeMatchText(profileField.label),
+    ...profileField.aliases.map(normalizeMatchText)
+  ]);
+
+  const aliasMatch = extractedFields.find((field) => {
+    const returnedKey = normalizeMatchText(field.key);
+    const returnedLabel = normalizeMatchText(field.label);
+    return hasValue(field.value) && (matchKeys.has(returnedKey) || matchKeys.has(returnedLabel));
+  });
+
+  return aliasMatch ?? exact ?? null;
+};
 
 export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
-  const [fieldsText, setFieldsText] = useState("");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<FileChatMessage[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState("");
@@ -44,21 +80,38 @@ export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
     queryFn: getDefaultExtractionFields
   });
 
-  useEffect(() => {
-    if (!fieldsText && defaults.data?.items.length) {
-      setFieldsText(defaultFieldsText(defaults.data.items));
-    }
-  }, [defaults.data?.items, fieldsText]);
+  const configuredFields =
+    file?.extractionProfile?.fields.length
+      ? file.extractionProfile.fields.map(toConfiguredField)
+      : (defaults.data?.items ?? []).map(toConfiguredField);
+
+  const displayFields = configuredFields.map((field) => {
+    const extracted = findExtractedField(field, result?.fields ?? []);
+    const present = extracted?.present ?? hasValue(extracted?.value);
+
+    return {
+      key: field.key,
+      label: field.label,
+      mandatory: extracted?.mandatory ?? field.mandatory,
+      present,
+      value: extracted?.value ?? null,
+      confidence: extracted?.confidence,
+      evidence: extracted?.evidence ?? null
+    };
+  });
+  const missingMandatoryFields = displayFields
+    .filter((field) => field.mandatory && !field.present)
+    .map((field) => field.label);
+  const ocrTextReady = hasOcrText(file);
+  const processingFile = isProcessingFile(file);
 
   useEffect(() => {
     setMessages(file?.chatMessages ?? []);
     setResult(file?.customExtractions ?? null);
   }, [file?.chatMessages, file?.customExtractions]);
 
-  const fieldLines = useMemo(() => parseFieldsText(fieldsText), [fieldsText]);
-
   const extraction = useMutation({
-    mutationFn: () => extractPredefinedFields(file?.id as string, fieldLines),
+    mutationFn: () => extractPredefinedFields(file?.id as string, configuredFields.map(toExtractionRequestField)),
     onSuccess: (data) => {
       setResult(data);
       void queryClient.invalidateQueries({ queryKey: ["certificate"] });
@@ -103,6 +156,8 @@ export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
       setPendingQuestion("");
     }
   });
+  const canFetchFields = Boolean(file?.id && configuredFields.length && ocrTextReady && !extraction.isPending);
+  const canAskFile = Boolean(file?.id && ocrTextReady && !chat.isPending);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -110,7 +165,7 @@ export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
 
   const sendQuestion = () => {
     const message = question.trim();
-    if (!message || chat.isPending) return;
+    if (!message || !canAskFile) return;
     chat.mutate(message);
   };
 
@@ -122,58 +177,104 @@ export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
     <div className="space-y-6">
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-ink">Default fields</h3>
+          <div>
+            <h3 className="text-sm font-semibold text-ink">
+              {file.extractionProfile?.label ? `${file.extractionProfile.label} fields` : "Configured fields"}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {configuredFields.length ? `${configuredFields.length} fields configured for extraction.` : "No fields configured yet."}
+            </p>
+          </div>
           <button
             type="button"
-            disabled={!fieldLines.length || extraction.isPending}
+            disabled={!canFetchFields}
             aria-busy={extraction.isPending}
             onClick={() => extraction.mutate()}
-            className="focus-ring inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-60"
+            className="focus-ring inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {extraction.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {extraction.isPending ? "Fetching" : "Fetch values"}
+            {extraction.isPending ? "Fetching" : ocrTextReady ? "Fetch values" : "Waiting for OCR"}
           </button>
         </div>
-        <textarea
-          value={fieldsText}
-          onChange={(event) => setFieldsText(event.target.value)}
-          rows={5}
-          className="focus-ring w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
+        {!ocrTextReady ? (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            OCR text is being extracted. Field fetching will be enabled when text is available.
+          </div>
+        ) : processingFile && !result ? (
+          <div className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Extracting configured fields from OCR text.
+          </div>
+        ) : null}
         {extraction.error ? <p className="text-sm text-red-600">{extraction.error.message}</p> : null}
-      </section>
-
-      <section className="space-y-3 border-t border-slate-200 pt-5">
-        <h3 className="text-sm font-semibold text-ink">Fetched values</h3>
+        {result && missingMandatoryFields.length ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Missing mandatory fields: {missingMandatoryFields.join(", ")}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-normal text-slate-500">
               <tr>
                 <th className="px-3 py-2">Field</th>
+                <th className="px-3 py-2">Required</th>
                 <th className="px-3 py-2">Value</th>
                 <th className="px-3 py-2">Confidence</th>
-                <th className="px-3 py-2">Evidence</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(result?.fields ?? []).map((field) => (
-                <tr key={field.key}>
-                  <td className="px-3 py-2 font-medium text-ink">{field.label ?? field.key}</td>
-                  <td className="px-3 py-2 text-slate-700">{formatValue(field.value)}</td>
-                  <td className="px-3 py-2 text-slate-600">{Math.round(field.confidence * 100)}%</td>
-                  <td className="max-w-md px-3 py-2 text-slate-500">{field.evidence ?? "-"}</td>
-                </tr>
-              ))}
-              {!result?.fields?.length ? (
+              {displayFields.map((field) => {
+                const isMissingMandatory = Boolean(result) && Boolean(field.mandatory) && !field.present;
+                return (
+                  <tr key={field.key} className={isMissingMandatory ? "bg-amber-50/60" : undefined}>
+                    <td className="px-3 py-2 font-medium text-ink">{field.label ?? field.key}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          field.mandatory ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {field.mandatory ? "Mandatory" : "Optional"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-700">{formatValue(field.value)}</td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {typeof field.confidence === "number" ? `${Math.round(field.confidence * 100)}%` : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!displayFields.length ? (
                 <tr>
                   <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
-                    No fetched values yet.
+                    No fields configured yet.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
+        {result?.checkpoints?.length ? (
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold uppercase tracking-normal text-slate-500">Checkpoints</h4>
+            <div className="grid gap-2 md:grid-cols-2">
+              {result.checkpoints.map((checkpoint) => (
+                <div
+                  key={checkpoint.key}
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    checkpoint.passed ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"
+                  }`}
+                >
+                  <div className="font-medium">
+                    {checkpoint.label}
+                    {checkpoint.mandatory ? " *" : ""}
+                  </div>
+                  <div className="mt-1 text-xs">{checkpoint.reason ?? (checkpoint.passed ? "Passed" : "Needs review")}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="space-y-3 border-t border-slate-200 pt-5">
@@ -217,16 +318,18 @@ export function FileAiPanel({ file }: { file?: UploadedFile | undefined }) {
                 sendQuestion();
               }
             }}
-            disabled={chat.isPending}
+            disabled={!canAskFile}
             className="focus-ring min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-            placeholder={chat.isPending ? "Processing uploaded file..." : "Ask a question from this file"}
+            placeholder={
+              !ocrTextReady ? "Waiting for OCR text..." : chat.isPending ? "Processing uploaded file..." : "Ask a question from this file"
+            }
           />
           <button
             type="button"
-            disabled={!question.trim() || chat.isPending}
+            disabled={!question.trim() || !canAskFile}
             aria-busy={chat.isPending}
             onClick={sendQuestion}
-            className="focus-ring inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-60"
+            className="focus-ring inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {chat.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {chat.isPending ? "Processing" : "Send"}

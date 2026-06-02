@@ -31,6 +31,29 @@ type FormValues = z.infer<typeof formSchema>;
 
 const dateValue = (value: string | null) => (value ? value.slice(0, 10) : "");
 const textValue = (value: string | null) => value ?? "";
+const payloadText = (payload: Record<string, unknown>, key: string) => {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+};
+const payloadArray = (payload: Record<string, unknown>, key: string) => {
+  const value = payload[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : null;
+};
+const normalizedDateValue = (value: string | null | undefined) => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const slashDate = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slashDate) {
+    const [, day, month, year] = slashDate;
+    if (!day || !month || !year) return "";
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  return "";
+};
 const arrayValue = (value: string[]) => value.join("\n");
 const arrayFromTextarea = (value?: string) =>
   (value ?? "")
@@ -51,25 +74,28 @@ export function CertificateEditForm({
   onSubmit: (payload: Record<string, unknown>) => void;
   submitting?: boolean;
 }) {
+  const normalizedPayload = certificate.normalizedPayload ?? {};
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       certificate_standard: textValue(certificate.certificateStandard),
       certificate_number: textValue(certificate.certificateNumber),
       organization_name: textValue(certificate.organizationName),
-      organization_address: textValue(certificate.organizationAddress),
+      organization_address: textValue(payloadText(normalizedPayload, "organization_address") ?? certificate.organizationAddress),
       scope_of_certification: textValue(certificate.scopeOfCertification),
       certification_body: textValue(certificate.certificationBody),
       accreditation_body: textValue(certificate.accreditationBody),
-      issue_date: dateValue(certificate.issueDate),
-      expiry_date: dateValue(certificate.expiryDate),
-      original_certification_date: dateValue(certificate.originalCertificationDate),
+      issue_date: normalizedDateValue(payloadText(normalizedPayload, "issue_date")) || dateValue(certificate.issueDate),
+      expiry_date: normalizedDateValue(payloadText(normalizedPayload, "expiry_date")) || dateValue(certificate.expiryDate),
+      original_certification_date:
+        normalizedDateValue(payloadText(normalizedPayload, "original_certification_date")) ||
+        dateValue(certificate.originalCertificationDate),
       authorized_signatory: textValue(certificate.authorizedSignatory),
       certificate_status: certificate.certificateStatus,
-      surveillance_dates: arrayValue(certificate.surveillanceDates),
+      surveillance_dates: arrayValue(payloadArray(normalizedPayload, "surveillance_dates") ?? certificate.surveillanceDates),
       iaf_codes: arrayValue(certificate.iafCodes),
       ea_codes: arrayValue(certificate.eaCodes),
-      site_addresses: arrayValue(certificate.siteAddresses),
+      site_addresses: arrayValue(payloadArray(normalizedPayload, "site_addresses") ?? certificate.siteAddresses),
       registration_numbers: arrayValue(certificate.registrationNumbers),
       reviewer_comment: ""
     }
@@ -103,12 +129,12 @@ export function CertificateEditForm({
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Certificate standard" register={form.register("certificate_standard")} />
         <Field label="Certificate number" register={form.register("certificate_number")} />
-        <Field label="Organization name" register={form.register("organization_name")} />
-        <Field label="Certification body" register={form.register("certification_body")} />
+        <Field label="Certified entity name" register={form.register("organization_name")} />
+        <Field label="Certification body / issuer" register={form.register("certification_body")} />
         <Field label="Accreditation body" register={form.register("accreditation_body")} />
         <Field label="Authorized signatory" register={form.register("authorized_signatory")} />
         <Field label="Issue date" type="date" register={form.register("issue_date")} />
-        <Field label="Expiry date" type="date" register={form.register("expiry_date")} />
+        <Field label="Validity / expiry date" type="date" register={form.register("expiry_date")} />
         <Field label="Original certification date" type="date" register={form.register("original_certification_date")} />
         <label>
           <span className="text-xs font-medium text-slate-600">Status</span>
@@ -126,9 +152,9 @@ export function CertificateEditForm({
         </label>
       </div>
 
-      <Textarea label="Organization address" register={form.register("organization_address")} />
+      <Textarea label="Issuer address" register={form.register("organization_address")} />
       <Textarea label="Scope of certification" register={form.register("scope_of_certification")} />
-      <Textarea label="Site addresses" register={form.register("site_addresses")} />
+      <Textarea label="Certification site address" register={form.register("site_addresses")} />
       <Textarea label="Surveillance dates" register={form.register("surveillance_dates")} />
       <Textarea label="IAF codes" register={form.register("iaf_codes")} />
       <Textarea label="EA codes" register={form.register("ea_codes")} />

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ACCEPTED_MIME_TYPES,
   CERTIFICATE_STATUSES,
+  DOCUMENT_CATEGORIES,
   FILE_STATUSES,
   SUPPORTED_CERTIFICATE_TYPES
 } from "./constants.js";
@@ -9,6 +10,41 @@ import {
 export const certificateStatusSchema = z.enum(CERTIFICATE_STATUSES);
 export const fileStatusSchema = z.enum(FILE_STATUSES);
 export const supportedCertificateTypeSchema = z.enum(SUPPORTED_CERTIFICATE_TYPES);
+export const documentCategorySchema = z.enum(DOCUMENT_CATEGORIES);
+
+export const extractionProfileFieldSchema = z.object({
+  key: z.string().trim().min(1).max(80).regex(/^[a-zA-Z0-9_.-]+$/),
+  label: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(500).optional(),
+  mandatory: z.boolean().default(false),
+  aliases: z.array(z.string().trim().min(1).max(160)).default([])
+});
+
+export const extractionCheckpointSchema = z.object({
+  key: z.string().trim().min(1).max(80).regex(/^[a-zA-Z0-9_.-]+$/),
+  label: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(500).optional(),
+  mandatory: z.boolean().default(false)
+});
+
+export const extractionProfileSchema = z.object({
+  category: documentCategorySchema,
+  label: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(500).optional(),
+  fields: z.array(extractionProfileFieldSchema).min(1).max(80),
+  checkpoints: z.array(extractionCheckpointSchema).max(40).default([])
+});
+
+export const updateExtractionProfileSchema = extractionProfileSchema
+  .omit({ category: true })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one profile property is required");
+
+export type DocumentCategory = z.infer<typeof documentCategorySchema>;
+export type ExtractionProfileField = z.infer<typeof extractionProfileFieldSchema>;
+export type ExtractionCheckpoint = z.infer<typeof extractionCheckpointSchema>;
+export type ExtractionProfile = z.infer<typeof extractionProfileSchema>;
+export type UpdateExtractionProfilePayload = z.infer<typeof updateExtractionProfileSchema>;
 
 const nullableString = z.string().trim().min(1).nullable();
 
@@ -49,7 +85,11 @@ export type UpdateCertificatePayload = z.infer<typeof updateCertificateSchema>;
 
 export const fileUploadConstraintsSchema = z.object({
   maxFileSizeMb: z.number().int().positive(),
-  mimeTypes: z.array(z.enum(["application/pdf", "image/png", "image/jpeg", "image/jpg"]))
+  mimeTypes: z.array(z.enum(ACCEPTED_MIME_TYPES))
+});
+
+export const fileUploadOptionsSchema = z.object({
+  documentCategory: documentCategorySchema.default("iso_certificate")
 });
 
 export const certificateSearchSchema = z.object({

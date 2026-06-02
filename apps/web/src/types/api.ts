@@ -1,3 +1,28 @@
+export type DocumentCategory = "iso_certificate" | "company_registration";
+
+export interface ExtractionProfileField {
+  key: string;
+  label: string;
+  description?: string;
+  mandatory: boolean;
+  aliases: string[];
+}
+
+export interface ExtractionCheckpoint {
+  key: string;
+  label: string;
+  description?: string;
+  mandatory: boolean;
+}
+
+export interface ExtractionProfile {
+  category: DocumentCategory;
+  label: string;
+  description?: string;
+  fields: ExtractionProfileField[];
+  checkpoints: ExtractionCheckpoint[];
+}
+
 export interface UploadedFile {
   id: string;
   originalName: string;
@@ -5,6 +30,8 @@ export interface UploadedFile {
   sizeBytes: string;
   s3Bucket: string;
   s3Key: string;
+  documentCategory?: DocumentCategory;
+  extractionProfile?: ExtractionProfile | null;
   status: string;
   ocrText: string | null;
   ocrConfidence: number | null;
@@ -83,11 +110,25 @@ export interface PredefinedExtractionResult {
   fields: Array<{
     key: string;
     label: string | null;
+    mandatory?: boolean;
+    present?: boolean;
     value: string | number | boolean | null;
     confidence: number;
     evidence: string | null;
   }>;
   summary: string | null;
+  documentCategory?: DocumentCategory;
+  overallConfidence?: number;
+  checkpoints?: Array<{
+    key: string;
+    label: string;
+    mandatory: boolean;
+    passed: boolean;
+    confidence: number;
+    reason: string | null;
+  }>;
+  missingMandatoryFields?: string[];
+  possibleIssues?: string[];
 }
 
 export interface FileChatMessage {

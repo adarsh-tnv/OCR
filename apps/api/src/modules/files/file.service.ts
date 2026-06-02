@@ -1,21 +1,25 @@
-import type { FileStatus } from "@prisma/client";
+import type { FileStatus, Prisma } from "@prisma/client";
+import type { DocumentCategory } from "@iso-ocr/shared";
 import crypto from "node:crypto";
 import type { z } from "zod";
 import { env } from "../../config/env.js";
 import { ocrQueue } from "../../queue/queues.js";
 import { s3StorageService } from "../../storage/s3.service.js";
 import { badRequest, notFound } from "../../utils/api-error.js";
+import { extractionProfileService } from "../extraction-profiles/extraction-profile.service.js";
 import { fileRepository } from "./file.repository.js";
 import { listFilesQuerySchema, validateUploadedFile } from "./file.validators.js";
 
 type ListFilesQuery = z.infer<typeof listFilesQuerySchema>;
 
 export class FileService {
-  async upload(files: Express.Multer.File[]) {
+  async upload(files: Express.Multer.File[], options: { documentCategory?: DocumentCategory } = {}) {
     if (!files.length) {
       throw badRequest("At least one file is required");
     }
 
+    const documentCategory = extractionProfileService.normalizeCategory(options.documentCategory);
+    const extractionProfile = await extractionProfileService.get(documentCategory);
     const results = [];
 
     for (const file of files) {
@@ -29,6 +33,8 @@ export class FileService {
         checksum,
         s3Bucket: stored.bucket,
         s3Key: stored.key,
+        documentCategory,
+        extractionProfile: extractionProfile as unknown as Prisma.InputJsonValue,
         status: "UPLOADED",
         deletedAt: null
       });
@@ -39,7 +45,8 @@ export class FileService {
         after: {
           originalName: uploadedFile.originalName,
           mimeType: uploadedFile.mimeType,
-          sizeBytes: uploadedFile.sizeBytes.toString()
+          sizeBytes: uploadedFile.sizeBytes.toString(),
+          documentCategory
         }
       });
 

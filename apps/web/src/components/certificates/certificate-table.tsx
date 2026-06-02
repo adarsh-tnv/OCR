@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { FileJson, FileSpreadsheet, FileText } from "lucide-react";
 import { StatusBadge } from "@/components/common/status-badge";
 import { downloadCertificateExport } from "@/lib/api";
@@ -25,9 +24,9 @@ export function CertificateTable({ certificates }: { certificates: CertificateRe
           {certificates.map((certificate) => (
             <tr key={certificate.id} className="hover:bg-slate-50/70">
               <td className="px-4 py-3">
-                <Link href={`/certificates/${certificate.id}`} className="font-medium text-brand-600 hover:underline">
+                <p className="font-medium text-ink">
                   {certificate.certificateNumber ?? "No certificate number"}
-                </Link>
+                </p>
                 <p className="text-xs text-slate-500">{certificate.certificateStandard ?? "Unknown standard"}</p>
               </td>
               <td className="max-w-xs px-4 py-3">

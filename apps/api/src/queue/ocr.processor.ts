@@ -4,6 +4,7 @@ import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { fileRepository } from "../modules/files/file.repository.js";
 import { extractionService } from "../modules/extraction/extraction.service.js";
+import { extractionProfileService } from "../modules/extraction-profiles/extraction-profile.service.js";
 import { ocrService } from "../modules/ocr/ocr.service.js";
 import { certificateService } from "../modules/certificates/certificate.service.js";
 import type { OcrJobPayload } from "./queues.js";
@@ -51,8 +52,50 @@ export const processOcrJob = async (job: Job<OcrJobPayload>) => {
       }
     });
 
+    const file = await fileRepository.findById(fileId);
+    const documentCategory = file?.documentCategory ?? "iso_certificate";
+    const profile = await extractionProfileService.get(documentCategory);
+
     await job.updateProgress(60);
-    const extractedPayload = await extractionService.extract(ocr);
+    const profileExtraction = await extractionService.extractWithProfile(ocr, profile);
+
+    await fileRepository.updateCustomExtractions(fileId, profileExtraction as unknown as Prisma.InputJsonValue);
+
+    await fileRepository.createHistory({
+      uploadedFileId: fileId,
+      action: "EXTRACTION_COMPLETED",
+      after: profileExtraction as unknown as Prisma.InputJsonValue
+    });
+
+    if (documentCategory !== "iso_certificate") {
+      const hasMissingMandatory =
+        profileExtraction.missingMandatoryFields.length > 0 ||
+        profileExtraction.checkpoints.some((checkpoint) => checkpoint.mandatory && !checkpoint.passed);
+
+      await fileRepository.updateProcessingJob(processingJobId, {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        metadata: {
+          documentCategory,
+          missingMandatoryFields: profileExtraction.missingMandatoryFields
+        }
+      });
+
+      await fileRepository.updateStatus(fileId, hasMissingMandatory ? "NEEDS_REVIEW" : "VALIDATED", {
+        processingEndedAt: new Date()
+      });
+
+      await job.updateProgress(100);
+      logger.info({ fileId, jobId: job.id, documentCategory }, "OCR profile extraction job completed");
+
+      return {
+        fileId,
+        documentCategory,
+        status: hasMissingMandatory ? "NEEDS_REVIEW" : "VALIDATED"
+      };
+    }
+
+    const extractedPayload = extractionService.toIsoCertificatePayload(profileExtraction, ocr);
     await job.updateProgress(85);
     const certificate = await certificateService.persistExtraction(fileId, extractedPayload, ocr);
 
@@ -61,7 +104,8 @@ export const processOcrJob = async (job: Job<OcrJobPayload>) => {
       completedAt: new Date(),
       metadata: {
         certificateId: certificate.id,
-        certificateStatus: certificate.certificateStatus
+        certificateStatus: certificate.certificateStatus,
+        documentCategory
       }
     });
 

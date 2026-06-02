@@ -61,6 +61,8 @@ model UploadedFile {
   checksum          String?
   s3Bucket          String                @map("s3_bucket")
   s3Key             String                @map("s3_key")
+  documentCategory  String?               @map("document_category")
+  extractionProfile Json?                 @map("extraction_profile")
   status            FileStatus            @default(UPLOADED)
   ocrText           String?               @map("ocr_text")
   ocrConfidence     Float?                @map("ocr_confidence")
@@ -84,9 +86,23 @@ model UploadedFile {
   reviewerComments     ReviewerComment[]
 
   @@index([status])
+  @@index([documentCategory])
   @@index([createdAt])
   @@index([checksum])
   @@map("uploaded_files")
+}
+
+model ExtractionProfile {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  category    String   @unique
+  label       String
+  description String?
+  fields      Json
+  checkpoints Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("extraction_profiles")
 }
 
 model ExtractedCertificate {

@@ -4,6 +4,8 @@ import type {
   CertificateRecord,
   DashboardCharts,
   DashboardStatistics,
+  DocumentCategory,
+  ExtractionProfile,
   FileChatResult,
   Paginated,
   PredefinedExtractionResult,
@@ -46,9 +48,11 @@ export const getFile = async (fileId: string) => (await api.get<UploadedFile>(`/
 
 export const uploadFiles = async (
   files: File[],
+  documentCategory: DocumentCategory,
   onUploadProgress?: (progress: number) => void
 ) => {
   const formData = new FormData();
+  formData.append("documentCategory", documentCategory);
   files.forEach((file) => formData.append("files", file));
   const response = await api.post<{ items: UploadedFile[] }>("/files/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -65,6 +69,14 @@ export const getPreview = async (fileId: string) =>
 
 export const getDefaultExtractionFields = async () =>
   (await api.get<{ items: PredefinedField[] }>("/files/extraction-fields/defaults")).data;
+
+export const listExtractionProfiles = async () =>
+  (await api.get<{ items: ExtractionProfile[] }>("/extraction-profiles")).data;
+
+export const updateExtractionProfile = async (
+  category: DocumentCategory,
+  payload: Partial<Omit<ExtractionProfile, "category">>
+) => (await api.put<ExtractionProfile>(`/extraction-profiles/${category}`, payload)).data;
 
 export const extractPredefinedFields = async (
   fileId: string,

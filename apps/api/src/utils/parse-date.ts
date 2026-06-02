@@ -1,4 +1,4 @@
-import { isValid, parse, parseISO } from "date-fns";
+import { getDate, getMonth, getYear, isValid, parse, parseISO } from "date-fns";
 
 const DATE_FORMATS = [
   "yyyy-MM-dd",
@@ -18,15 +18,19 @@ export const parseCertificateDate = (value: string | null | undefined): Date | n
   if (!trimmed) return null;
 
   const iso = parseISO(trimmed);
-  if (isValid(iso)) return iso;
+  if (isValid(iso)) {
+    return new Date(Date.UTC(getYear(iso), getMonth(iso), getDate(iso)));
+  }
 
   for (const format of DATE_FORMATS) {
     const parsed = parse(trimmed, format, new Date());
-    if (isValid(parsed)) return parsed;
+    if (isValid(parsed)) {
+      return new Date(Date.UTC(getYear(parsed), getMonth(parsed), getDate(parsed)));
+    }
   }
 
   const fallback = new Date(trimmed);
-  return isValid(fallback) ? fallback : null;
+  return isValid(fallback) ? new Date(Date.UTC(getYear(fallback), getMonth(fallback), getDate(fallback))) : null;
 };
 
 export const toIsoDateString = (date: Date | null | undefined) =>

@@ -1,4 +1,5 @@
 import multer from "multer";
+import { fileUploadOptionsSchema } from "@iso-ocr/shared";
 import { env } from "../../config/env.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { jsonSafe } from "../../utils/json-safe.js";
@@ -14,7 +15,8 @@ export const uploadMiddleware = multer({
 
 export const uploadFiles = asyncHandler(async (req, res) => {
   const files = (req.files ?? []) as Express.Multer.File[];
-  const uploaded = await fileService.upload(files);
+  const options = fileUploadOptionsSchema.parse(req.body);
+  const uploaded = await fileService.upload(files, options);
   res.status(201).json(jsonSafe({ items: uploaded }));
 });
 

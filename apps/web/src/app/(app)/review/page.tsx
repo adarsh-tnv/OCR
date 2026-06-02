@@ -1,8 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
-import { AlertCircle, MessageSquare } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { StatusBadge } from "@/components/common/status-badge";
 import { getReviewQueue } from "@/lib/api";
 
@@ -32,22 +31,12 @@ export default function ReviewQueuePage() {
                     {Math.round(certificate.confidenceScore * 100)}% confidence
                   </span>
                 </div>
-                <Link
-                  href={`/certificates/${certificate.id}`}
-                  className="mt-2 block text-base font-semibold text-brand-600 hover:underline"
-                >
+                <p className="mt-2 text-base font-semibold text-ink">
                   {certificate.certificateNumber ?? "Missing certificate number"}
-                </Link>
+                </p>
                 <p className="mt-1 truncate text-sm text-ink">{certificate.organizationName ?? "Unknown organization"}</p>
                 <p className="mt-1 text-sm text-slate-500">{certificate.certificateStandard ?? "Unknown standard"}</p>
               </div>
-              <Link
-                href={`/certificates/${certificate.id}`}
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500"
-              >
-                <MessageSquare className="h-4 w-4" />
-                Review
-              </Link>
             </div>
 
             {certificate.validationFlags?.length ? (

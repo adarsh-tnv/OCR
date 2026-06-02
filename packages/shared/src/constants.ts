@@ -2,10 +2,11 @@ export const ACCEPTED_MIME_TYPES = [
   "application/pdf",
   "image/png",
   "image/jpeg",
-  "image/jpg"
+  "image/jpg",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 ] as const;
 
-export const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg"] as const;
+export const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx"] as const;
 
 export const SUPPORTED_CERTIFICATE_TYPES = [
   "ISO 9001",
@@ -38,4 +39,9 @@ export const CERTIFICATE_STATUSES = [
   "incomplete",
   "pending_review",
   "unknown"
+] as const;
+
+export const DOCUMENT_CATEGORIES = [
+  "iso_certificate",
+  "company_registration"
 ] as const;

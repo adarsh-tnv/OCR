@@ -1,8 +1,12 @@
 import { env } from "../../config/env.js";
+import { s3StorageService } from "../../storage/s3.service.js";
 import { notFound } from "../../utils/api-error.js";
 import { fileRepository } from "../files/file.repository.js";
+import { docxDocumentClient } from "./docx.client.js";
 import { textractDocumentClient } from "./textract.client.js";
 import type { OcrResult } from "./ocr.types.js";
+
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export class OcrService {
   async processUploadedFile(fileId: string): Promise<OcrResult> {
@@ -24,6 +28,11 @@ export class OcrService {
           logoDetected: false
         }
       };
+    }
+
+    if (file.mimeType === DOCX_MIME_TYPE) {
+      const buffer = await s3StorageService.download(file.s3Bucket, file.s3Key);
+      return docxDocumentClient.processDocument(buffer);
     }
 
     return textractDocumentClient.processDocument({

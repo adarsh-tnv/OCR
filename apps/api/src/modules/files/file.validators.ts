@@ -19,7 +19,8 @@ const extensionMimeTypes: Record<string, string[]> = {
   ".pdf": ["application/pdf"],
   ".png": ["image/png"],
   ".jpg": ["image/jpeg", "image/jpg"],
-  ".jpeg": ["image/jpeg", "image/jpg"]
+  ".jpeg": ["image/jpeg", "image/jpg"],
+  ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
 };
 
 const hasPdfSignature = (buffer: Buffer) => buffer.subarray(0, 5).toString("ascii") === "%PDF-";
@@ -38,10 +39,20 @@ const hasPngSignature = (buffer: Buffer) =>
 const hasJpegSignature = (buffer: Buffer) =>
   buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
 
+const hasDocxSignature = (buffer: Buffer) =>
+  buffer.length >= 4 &&
+  buffer[0] === 0x50 &&
+  buffer[1] === 0x4b &&
+  buffer.includes(Buffer.from("[Content_Types].xml", "utf8")) &&
+  buffer.includes(Buffer.from("word/document.xml", "utf8"));
+
 const contentMatchesMimeType = (file: Express.Multer.File) => {
   if (file.mimetype === "application/pdf") return hasPdfSignature(file.buffer);
   if (file.mimetype === "image/png") return hasPngSignature(file.buffer);
   if (file.mimetype === "image/jpeg" || file.mimetype === "image/jpg") return hasJpegSignature(file.buffer);
+  if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return hasDocxSignature(file.buffer);
+  }
   return false;
 };
 
